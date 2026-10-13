@@ -8,10 +8,11 @@ import {
   PackerBreakdownItem, 
   SkuBreakdownItem, 
   SlocBreakdownItem, 
-  HandoverBreakdownItem 
+  HandoverBreakdownItem,
+  SystemStatus
 } from './types.ts';
 
-// Row indices:
+// Row format in memory:
 // 0: order_id, 1: status, 2: mit_dn, 3: sku, 4: courier, 5: awb, 6: sn, 7: sloc, 8: packer, 9: print_date, 10: handover_no
 export type RawRow = [
   string, // 0: order_id
@@ -27,23 +28,80 @@ export type RawRow = [
   string  // 10: handover_no
 ];
 
-const monthCache = new Map<string, RawRow[]>();
+const KNOWN_MONTHS = [
+  '2026-10',
+  '2026-09',
+  '2026-08',
+  '2026-07',
+  '2026-06',
+  '2026-05',
+  '2026-04',
+  '2026-03',
+  'Tanpa Tanggal'
+];
 
+const monthCache = new Map<string, RawRow[]>();
+let customUploadedData: RawRow[] | null = null;
+
+// Safe URL resolver for GitHub Pages and subpaths
+export function getDataUrl(filename: string): string {
+  const base = import.meta.env.BASE_URL || './';
+  const cleanBase = base.endsWith('/') ? base : base + '/';
+  return `${cleanBase}data/${filename}`;
+}
+
+export function isSubFiltered(filters: FilterState): boolean {
+  return Boolean(
+    (filters.status && filters.status !== 'all') ||
+    (filters.courier && filters.courier !== 'all') ||
+    (filters.sloc && filters.sloc !== 'all') ||
+    (filters.packer && filters.packer !== 'all') ||
+    (filters.handover && filters.handover !== 'all') ||
+    filters.startDate ||
+    filters.endDate ||
+    (filters.search && filters.search.trim())
+  );
+}
+
+// Load month data with local caching and fallback
 export async function loadMonthData(month: string): Promise<RawRow[]> {
-  const targetMonth = month && month !== 'all' ? month : '2026-08';
-  if (monthCache.has(targetMonth)) {
-    return monthCache.get(targetMonth)!;
+  // If custom data was uploaded via CSV, use that
+  if (customUploadedData && customUploadedData.length > 0) {
+    if (!month || month === 'all') return customUploadedData;
+    return customUploadedData.filter((r) => {
+      const pDate = r[9] ? r[9].slice(0, 7) : 'Tanpa Tanggal';
+      return pDate === month;
+    });
+  }
+
+  // Handle 'all' months
+  if (!month || month === 'all') {
+    if (monthCache.has('all')) {
+      return monthCache.get('all')!;
+    }
+    // Load default month first (2026-08) or combine months
+    const aug = await loadSingleMonth('2026-08');
+    return aug;
+  }
+
+  return loadSingleMonth(month);
+}
+
+async function loadSingleMonth(month: string): Promise<RawRow[]> {
+  if (monthCache.has(month)) {
+    return monthCache.get(month)!;
   }
 
   try {
-    const res = await fetch(`./data/month-${targetMonth}.json`);
+    const url = getDataUrl(`month-${month}.json`);
+    const res = await fetch(url);
     if (res.ok) {
       const data: RawRow[] = await res.json();
-      monthCache.set(targetMonth, data);
+      monthCache.set(month, data);
       return data;
     }
   } catch (err) {
-    console.warn(`Failed to fetch static data for month ${targetMonth}:`, err);
+    console.warn(`Gagal memuat file statis untuk bulan ${month}:`, err);
   }
 
   return [];
@@ -58,12 +116,13 @@ export function matchFilter(row: RawRow, filters: FilterState): boolean {
 
   // 2. Courier
   if (filters.courier && filters.courier !== 'all') {
+    const cUpper = (row[4] || '').toUpperCase();
     if (filters.courier === 'JNE (Semua)' || filters.courier === 'JNE') {
-      if (!row[4].startsWith('JNE')) return false;
+      if (!cUpper.startsWith('JNE')) return false;
     } else if (filters.courier === 'J&T (Semua)' || filters.courier === 'J&T') {
-      if (!row[4].startsWith('J&T')) return false;
+      if (!cUpper.startsWith('J&T')) return false;
     } else if (filters.courier === 'SPX (Semua)' || filters.courier === 'SPX') {
-      if (!row[4].startsWith('SPX')) return false;
+      if (!cUpper.startsWith('SPX')) return false;
     } else {
       if (row[4] !== filters.courier) return false;
     }
@@ -81,18 +140,19 @@ export function matchFilter(row: RawRow, filters: FilterState): boolean {
 
   // 5. Handover
   if (filters.handover && filters.handover !== 'all') {
-    if (filters.handover === 'yes' && !row[10]) return false;
-    if (filters.handover === 'no' && row[10]) return false;
+    const hasHo = Boolean(row[10] && row[10].trim());
+    if (filters.handover === 'yes' && !hasHo) return false;
+    if (filters.handover === 'no' && hasHo) return false;
   }
 
   // 6. Date Range (Print Date)
   if (filters.startDate) {
     const pDate = row[9] ? row[9].slice(0, 10) : '';
-    if (pDate && pDate < filters.startDate) return false;
+    if (!pDate || pDate < filters.startDate) return false;
   }
   if (filters.endDate) {
     const pDate = row[9] ? row[9].slice(0, 10) : '';
-    if (pDate && pDate > filters.endDate) return false;
+    if (!pDate || pDate > filters.endDate) return false;
   }
 
   // 7. Search Keyword
@@ -104,6 +164,8 @@ export function matchFilter(row: RawRow, filters: FilterState): boolean {
     const sku = (row[3] || '').toLowerCase();
     const mitDn = (row[2] || '').toLowerCase();
     const ho = (row[10] || '').toLowerCase();
+    const courier = (row[4] || '').toLowerCase();
+    const packer = (row[8] || '').toLowerCase();
 
     if (
       !orderId.includes(s) &&
@@ -111,7 +173,9 @@ export function matchFilter(row: RawRow, filters: FilterState): boolean {
       !sn.includes(s) &&
       !sku.includes(s) &&
       !mitDn.includes(s) &&
-      !ho.includes(s)
+      !ho.includes(s) &&
+      !courier.includes(s) &&
+      !packer.includes(s)
     ) {
       return false;
     }
@@ -160,7 +224,7 @@ export function computeAnalytics(filteredRows: RawRow[]): AnalyticsResponse {
     else if (st === 'Returned') returned++;
     else if (st === 'Goods Issue') goodsIssue++;
 
-    if (ho) handover++;
+    if (ho && ho.trim()) handover++;
     if (sk) skuSet.add(sk);
     if (pk) packerSet.add(pk);
 
@@ -222,7 +286,7 @@ export function computeAnalytics(filteredRows: RawRow[]): AnalyticsResponse {
     slocMap.set(sl, curSlocCount + 1);
 
     // Handover breakdown
-    if (ho) {
+    if (ho && ho.trim()) {
       let hItem = hoMap.get(ho);
       if (!hItem) {
         hItem = { total: 0, delivered: 0, cancelled: 0 };
@@ -309,7 +373,7 @@ export function computeAnalytics(filteredRows: RawRow[]): AnalyticsResponse {
       share: total > 0 ? (val.total / total) * 100 : 0,
     }))
     .sort((a, b) => b.total - a.total)
-    .slice(0, 10);
+    .slice(0, 15);
 
   return {
     summary,
@@ -337,7 +401,6 @@ export function computeOrders(
   const safePage = Math.min(Math.max(1, page), totalPages);
   const start = (safePage - 1) * limit;
 
-  // Map to index:
   const colIndexMap: Record<string, number> = {
     order_id: 0,
     status: 1,
@@ -354,8 +417,6 @@ export function computeOrders(
 
   const sortIdx = colIndexMap[sortBy] ?? 9;
 
-  // Create a sorted view or slice
-  // To keep it fast, if dataset is large, sort directly:
   const sorted = [...filteredRows].sort((a, b) => {
     const valA = a[sortIdx] || '';
     const valB = b[sortIdx] || '';
@@ -383,32 +444,20 @@ export function computeOrders(
   return { orders, total, totalPages };
 }
 
-// Client-side Direct Google Sheets Sync via CORS
-export async function syncDirectFromGoogleSheets(): Promise<{
-  success: boolean;
-  rowCount: number;
-  message: string;
-}> {
-  const url =
-    'https://docs.google.com/spreadsheets/d/1bdD0HshoPpbbhMNzlCfAfV4UGUOaSwjhoYMmLLbbJ_I/gviz/tq?tqx=out:csv&gid=1566921166';
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Google Sheets mengembalikan status: ${res.status}`);
-  }
-
-  const csvText = await res.text();
+// Client-side CSV Text Parser and in-memory updater
+export function parseCSVToRows(csvText: string): { rows: RawRow[]; status: SystemStatus } {
   const lines = csvText.split(/\r?\n/);
-
-  // Group rows by month
-  const grouped = new Map<string, RawRow[]>();
-  let rowCount = 0;
+  const rows: RawRow[] = [];
+  const monthCountMap = new Map<string, number>();
+  const statusCountMap = new Map<string, number>();
+  const courierCountMap = new Map<string, number>();
+  const packerCountMap = new Map<string, number>();
+  const slocCountMap = new Map<string, number>();
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Fast parse quotes
     const cells: string[] = [];
     let inQuotes = false;
     let current = '';
@@ -422,16 +471,15 @@ export async function syncDirectFromGoogleSheets(): Promise<{
           inQuotes = !inQuotes;
         }
       } else if (char === ',' && !inQuotes) {
-        cells.push(current);
+        cells.push(current.trim());
         current = '';
       } else {
         current += char;
       }
     }
-    cells.push(current);
+    cells.push(current.trim());
 
-    if (cells.length >= 10) {
-      rowCount++;
+    if (cells.length >= 8) {
       const pdate = cells[9] ? cells[9].trim() : '';
       const ym = pdate.length >= 7 ? pdate.slice(0, 7) : (pdate ? pdate.slice(0, 4) : 'Tanpa Tanggal');
       
@@ -449,23 +497,72 @@ export async function syncDirectFromGoogleSheets(): Promise<{
         cells[10] || '',
       ];
 
-      let list = grouped.get(ym);
-      if (!list) {
-        list = [];
-        grouped.set(ym, list);
-      }
-      list.push(row);
+      rows.push(row);
+
+      // Counters
+      monthCountMap.set(ym, (monthCountMap.get(ym) || 0) + 1);
+      if (row[1]) statusCountMap.set(row[1], (statusCountMap.get(row[1]) || 0) + 1);
+      if (row[4]) courierCountMap.set(row[4], (courierCountMap.get(row[4]) || 0) + 1);
+      if (row[8]) packerCountMap.set(row[8], (packerCountMap.get(row[8]) || 0) + 1);
+      if (row[7]) slocCountMap.set(row[7], (slocCountMap.get(row[7]) || 0) + 1);
     }
   }
 
-  // Update in-memory month cache
-  for (const [ym, rows] of grouped.entries()) {
-    monthCache.set(ym, rows);
+  customUploadedData = rows;
+  monthCache.clear();
+
+  // Populate month cache
+  for (const r of rows) {
+    const ym = r[9] && r[9].length >= 7 ? r[9].slice(0, 7) : 'Tanpa Tanggal';
+    let list = monthCache.get(ym);
+    if (!list) {
+      list = [];
+      monthCache.set(ym, list);
+    }
+    list.push(r);
   }
 
-  return {
-    success: true,
-    rowCount,
-    message: `Berhasil menyinkronkan ${rowCount.toLocaleString('id-ID')} pesanan langsung dari Google Spreadsheet!`,
+  const months = Array.from(monthCountMap.entries())
+    .map(([year_month, count]) => ({ year_month, count }))
+    .sort((a, b) => b.year_month.localeCompare(a.year_month));
+
+  const statuses = Array.from(statusCountMap.entries())
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const couriers = Array.from(courierCountMap.entries())
+    .map(([courier, count]) => ({ courier, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const packers = Array.from(packerCountMap.entries())
+    .map(([packer, count]) => ({ packer, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const slocs = Array.from(slocCountMap.entries())
+    .map(([sloc, count]) => ({ sloc, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const nowStr = new Date().toLocaleString('id-ID');
+
+  const status: SystemStatus = {
+    isReady: true,
+    isSyncing: false,
+    syncProgress: '',
+    meta: {
+      lastSync: nowStr,
+      rowCount: rows.length,
+      spreadsheetId: '',
+      gid: ''
+    },
+    totalRows: rows.length,
+    filterOptions: {
+      months,
+      statuses,
+      couriers,
+      packers,
+      slocs
+    }
   };
+
+  return { rows, status };
 }
