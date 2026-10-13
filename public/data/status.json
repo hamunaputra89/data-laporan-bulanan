@@ -1,0 +1,492 @@
+{
+  "isReady": true,
+  "isSyncing": false,
+  "syncProgress": "",
+  "meta": {
+    "lastSync": "2026-10-13 16:16:00",
+    "rowCount": 398532,
+    "spreadsheetId": "1bdD0HshoPpbbhMNzlCfAfV4UGUOaSwjhoYMmLLbbJ_I",
+    "gid": "1566921166"
+  },
+  "totalRows": 398532,
+  "filterOptions": {
+    "months": [
+      {
+        "year_month": "2026-10",
+        "count": 26748
+      },
+      {
+        "year_month": "2026-09",
+        "count": 66973
+      },
+      {
+        "year_month": "2026-08",
+        "count": 60298
+      },
+      {
+        "year_month": "2026-07",
+        "count": 46864
+      },
+      {
+        "year_month": "2026-06",
+        "count": 42875
+      },
+      {
+        "year_month": "2026-05",
+        "count": 49396
+      },
+      {
+        "year_month": "2026-04",
+        "count": 66578
+      },
+      {
+        "year_month": "2026-03",
+        "count": 1364
+      },
+      {
+        "year_month": "Tanpa Tanggal",
+        "count": 37436
+      }
+    ],
+    "statuses": [
+      {
+        "status": "Delivered",
+        "count": 276671
+      },
+      {
+        "status": "Cancelled",
+        "count": 114214
+      },
+      {
+        "status": "Shipped",
+        "count": 6001
+      },
+      {
+        "status": "Ready to Ship",
+        "count": 1516
+      },
+      {
+        "status": "Returned",
+        "count": 74
+      },
+      {
+        "status": "Goods Issue",
+        "count": 55
+      }
+    ],
+    "couriers": [
+      {
+        "courier": "JNE (Semua)",
+        "count": 260762
+      },
+      {
+        "courier": "J&T (Semua)",
+        "count": 107627
+      },
+      {
+        "courier": "SPX (Semua)",
+        "count": 26621
+      },
+      {
+        "courier": "JNE Express Standard ID",
+        "count": 253890
+      },
+      {
+        "courier": "J&T Express",
+        "count": 83431
+      },
+      {
+        "courier": "J&T Reguler",
+        "count": 21084
+      },
+      {
+        "courier": "SPX Standard",
+        "count": 17009
+      },
+      {
+        "courier": "SPX Hemat",
+        "count": 8089
+      },
+      {
+        "courier": "JNE Reguler",
+        "count": 5258
+      },
+      {
+        "courier": "J&T-MP",
+        "count": 1654
+      },
+      {
+        "courier": "J&T Cargo",
+        "count": 1458
+      },
+      {
+        "courier": "SPX Instant",
+        "count": 1199
+      },
+      {
+        "courier": "JNE Trucking (JTR)",
+        "count": 881
+      },
+      {
+        "courier": "Grab",
+        "count": 676
+      },
+      {
+        "courier": "JNE-MP",
+        "count": 552
+      },
+      {
+        "courier": "Gojek",
+        "count": 521
+      },
+      {
+        "courier": "Pickup: LEX ID, Delivery: LEX ID",
+        "count": 421
+      },
+      {
+        "courier": "GrabExpress Instant",
+        "count": 323
+      },
+      {
+        "courier": "Pickup: LEX ID, Delivery: J&T",
+        "count": 244
+      },
+      {
+        "courier": "Gosend Instant",
+        "count": 178
+      },
+      {
+        "courier": "SiCepat REG",
+        "count": 162
+      },
+      {
+        "courier": "SiCepat Halu",
+        "count": 159
+      },
+      {
+        "courier": "SPX Sameday",
+        "count": 125
+      },
+      {
+        "courier": "JNE Cargo",
+        "count": 121
+      },
+      {
+        "courier": "Anteraja Economy",
+        "count": 116
+      },
+      {
+        "courier": "SPX Instant Prioritas",
+        "count": 113
+      },
+      {
+        "courier": "Jasa Kirim Tukar Tambah",
+        "count": 96
+      },
+      {
+        "courier": "SPX Instant (Versi Lama)",
+        "count": 86
+      },
+      {
+        "courier": "GrabExpress Instant (Versi Lama)",
+        "count": 79
+      },
+      {
+        "courier": "ID Express",
+        "count": 67
+      },
+      {
+        "courier": "Pickup: LEX ID, Delivery: JNE",
+        "count": 56
+      },
+      {
+        "courier": "GoSend Instant (Versi Lama)",
+        "count": 44
+      },
+      {
+        "courier": "GrabExpress Instant Prioritas",
+        "count": 36
+      },
+      {
+        "courier": "Anteraja",
+        "count": 24
+      },
+      {
+        "courier": "SiCepat-MP",
+        "count": 23
+      },
+      {
+        "courier": "Pickup: LEX ID, Delivery: Sicepat",
+        "count": 18
+      },
+      {
+        "courier": "JNE PICK UP",
+        "count": 16
+      },
+      {
+        "courier": "JNE",
+        "count": 15
+      },
+      {
+        "courier": "GoSend Instant Prioritas",
+        "count": 14
+      },
+      {
+        "courier": "LEX ID",
+        "count": 14
+      },
+      {
+        "courier": "JNE PICK UP T",
+        "count": 13
+      },
+      {
+        "courier": "Reguler (Cashless)",
+        "count": 13
+      },
+      {
+        "courier": "GrabExpress Sameday",
+        "count": 12
+      },
+      {
+        "courier": "JNT CASHLESS",
+        "count": 11
+      },
+      {
+        "courier": "JNE YES",
+        "count": 10
+      },
+      {
+        "courier": "JNT Express Pickup",
+        "count": 9
+      },
+      {
+        "courier": "Sicepat Gokil",
+        "count": 9
+      },
+      {
+        "courier": "Pickup: Laku6, Delivery: Laku6",
+        "count": 7
+      },
+      {
+        "courier": "Sicepat BEST",
+        "count": 7
+      },
+      {
+        "courier": "JNE Pickup",
+        "count": 5
+      },
+      {
+        "courier": "Pickup: LEX ID, Delivery: NinjaVanID",
+        "count": 4
+      },
+      {
+        "courier": "Blitz-ID",
+        "count": 3
+      },
+      {
+        "courier": "LAKUSIX NEW",
+        "count": 3
+      },
+      {
+        "courier": "Paxel",
+        "count": 3
+      },
+      {
+        "courier": "Hemat Kargo",
+        "count": 2
+      },
+      {
+        "courier": "ID Express Cargo S",
+        "count": 2
+      },
+      {
+        "courier": "Sicepat Regular",
+        "count": 2
+      },
+      {
+        "courier": "AnterAja-MP",
+        "count": 1
+      },
+      {
+        "courier": "GoSend Same Day",
+        "count": 1
+      },
+      {
+        "courier": "IDX",
+        "count": 1
+      },
+      {
+        "courier": "JNE Cashless",
+        "count": 1
+      },
+      {
+        "courier": "JNT Cargo",
+        "count": 1
+      }
+    ],
+    "packers": [
+      {
+        "packer": "Aditya Pujadi",
+        "count": 43246
+      },
+      {
+        "packer": "SamuelP",
+        "count": 32230
+      },
+      {
+        "packer": "Lukman Hakim",
+        "count": 30619
+      },
+      {
+        "packer": "Admin Satria",
+        "count": 30188
+      },
+      {
+        "packer": "Reza",
+        "count": 30048
+      },
+      {
+        "packer": "ANDRE EKSA",
+        "count": 23043
+      },
+      {
+        "packer": "adnan",
+        "count": 18540
+      },
+      {
+        "packer": "iwanta",
+        "count": 18524
+      },
+      {
+        "packer": "Kholis",
+        "count": 15156
+      },
+      {
+        "packer": "Krisna Maulana",
+        "count": 14343
+      },
+      {
+        "packer": "TOPIKKK420",
+        "count": 13683
+      },
+      {
+        "packer": "Hery",
+        "count": 13037
+      },
+      {
+        "packer": "Nando",
+        "count": 11720
+      },
+      {
+        "packer": "Satria",
+        "count": 11252
+      },
+      {
+        "packer": "andre",
+        "count": 10073
+      },
+      {
+        "packer": "Mahardika",
+        "count": 7833
+      },
+      {
+        "packer": "Birul",
+        "count": 5805
+      },
+      {
+        "packer": "Agus Adhari",
+        "count": 5305
+      },
+      {
+        "packer": "WH Semarang",
+        "count": 4830
+      },
+      {
+        "packer": "Agung RI",
+        "count": 4749
+      },
+      {
+        "packer": "Ibnu Septin",
+        "count": 3912
+      },
+      {
+        "packer": "Admin Permana",
+        "count": 3200
+      },
+      {
+        "packer": "Warso",
+        "count": 2778
+      },
+      {
+        "packer": "Admin Fajar",
+        "count": 2648
+      },
+      {
+        "packer": "Lepi Wiradani",
+        "count": 2040
+      },
+      {
+        "packer": "Admin Logistik Tendra",
+        "count": 1381
+      },
+      {
+        "packer": "Admin W100",
+        "count": 602
+      },
+      {
+        "packer": "Cs Ancol",
+        "count": 165
+      },
+      {
+        "packer": "Admin Sofyan",
+        "count": 43
+      },
+      {
+        "packer": "Alexander Bobby",
+        "count": 38
+      },
+      {
+        "packer": "Admin WH Surabaya",
+        "count": 34
+      },
+      {
+        "packer": "WH Bandung",
+        "count": 16
+      },
+      {
+        "packer": "WH Yogyakarta",
+        "count": 12
+      },
+      {
+        "packer": "Rizki Kurnia Dewi",
+        "count": 1
+      },
+      {
+        "packer": "Sofyan Andre",
+        "count": 1
+      },
+      {
+        "packer": "WH Medan",
+        "count": 1
+      }
+    ],
+    "slocs": [
+      {
+        "sloc": "1653",
+        "count": 282673
+      },
+      {
+        "sloc": "1655",
+        "count": 112343
+      },
+      {
+        "sloc": "1401",
+        "count": 1983
+      },
+      {
+        "sloc": "1403",
+        "count": 807
+      }
+    ]
+  }
+}

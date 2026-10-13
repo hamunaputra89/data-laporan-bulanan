@@ -68,17 +68,28 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
-  // 1. Fetch system status & filter options
+  // 1. Fetch system status & filter options (with GitHub Pages static fallback)
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/status');
+      let res = await fetch('/api/status');
+      if (!res.ok) {
+        res = await fetch('./data/status.json');
+      }
       if (res.ok) {
         const data: SystemStatus = await res.json();
         setSystemStatus(data);
         setIsSyncing(data.isSyncing);
       }
     } catch (err) {
-      console.error('Failed to fetch status:', err);
+      try {
+        const fallbackRes = await fetch('./data/status.json');
+        if (fallbackRes.ok) {
+          const data: SystemStatus = await fallbackRes.json();
+          setSystemStatus(data);
+        }
+      } catch (staticErr) {
+        console.error('Failed to fetch status:', staticErr);
+      }
     }
   }, []);
 
@@ -101,24 +112,37 @@ export default function App() {
     return params;
   }, []);
 
-  // 3. Fetch Analytics whenever filters change
+  // 3. Fetch Analytics whenever filters change (with GitHub Pages static fallback)
   const fetchAnalytics = useCallback(async (currentFilters: FilterState) => {
     setIsLoadingAnalytics(true);
     try {
       const params = buildQueryParams(currentFilters);
-      const res = await fetch(`/api/report/analytics?${params.toString()}`);
+      let res = await fetch(`/api/report/analytics?${params.toString()}`);
+      if (!res.ok) {
+        const m = currentFilters.month || 'all';
+        res = await fetch(`./data/analytics-${m}.json`);
+      }
       if (res.ok) {
         const data: AnalyticsResponse = await res.json();
         setAnalytics(data);
       }
     } catch (err) {
-      console.error('Failed to fetch analytics:', err);
+      try {
+        const m = currentFilters.month || 'all';
+        const fallbackRes = await fetch(`./data/analytics-${m}.json`);
+        if (fallbackRes.ok) {
+          const data: AnalyticsResponse = await fallbackRes.json();
+          setAnalytics(data);
+        }
+      } catch (staticErr) {
+        console.error('Failed to fetch analytics:', staticErr);
+      }
     } finally {
       setIsLoadingAnalytics(false);
     }
   }, [buildQueryParams]);
 
-  // 4. Fetch Orders list with pagination & sorting
+  // 4. Fetch Orders list with pagination & sorting (with GitHub Pages static fallback)
   const fetchOrders = useCallback(async (
     currentFilters: FilterState,
     page: number,
@@ -134,14 +158,28 @@ export default function App() {
       params.set('sortBy', sBy);
       params.set('sortOrder', sOrder);
 
-      const res = await fetch(`/api/orders?${params.toString()}`);
+      let res = await fetch(`/api/orders?${params.toString()}`);
+      if (!res.ok) {
+        const m = currentFilters.month || 'all';
+        res = await fetch(`./data/orders-${m}.json`);
+      }
       if (res.ok) {
         const data = await res.json();
         setOrders(data.data || []);
-        setPagination(data.pagination || { page, limit, total: 0, totalPages: 1 });
+        setPagination(data.pagination || { page, limit, total: (data.data || []).length, totalPages: 1 });
       }
     } catch (err) {
-      console.error('Failed to fetch orders:', err);
+      try {
+        const m = currentFilters.month || 'all';
+        const fallbackRes = await fetch(`./data/orders-${m}.json`);
+        if (fallbackRes.ok) {
+          const data = await fallbackRes.json();
+          setOrders(data.data || []);
+          setPagination(data.pagination || { page: 1, limit: 25, total: (data.data || []).length, totalPages: 1 });
+        }
+      } catch (staticErr) {
+        console.error('Failed to fetch orders:', staticErr);
+      }
     } finally {
       setIsLoadingOrders(false);
     }
