@@ -33,6 +33,13 @@ import { OrdersTable } from './components/OrdersTable.tsx';
 import { OrderDetailModal } from './components/OrderDetailModal.tsx';
 import { PrintReportModal } from './components/PrintReportModal.tsx';
 import { HandoverAnalysis } from './components/HandoverAnalysis.tsx';
+import { 
+  loadMonthData, 
+  matchFilter, 
+  computeAnalytics, 
+  computeOrders, 
+  syncDirectFromGoogleSheets 
+} from './clientDataEngine.ts';
 
 const DEFAULT_FILTERS: FilterState = {
   month: '2026-08', // Default to active full month in dataset
@@ -112,31 +119,30 @@ export default function App() {
     return params;
   }, []);
 
-  // 3. Fetch Analytics whenever filters change (with GitHub Pages static fallback)
+  // 3. Fetch Analytics whenever filters change (supports server & GitHub Pages client engine)
   const fetchAnalytics = useCallback(async (currentFilters: FilterState) => {
     setIsLoadingAnalytics(true);
     try {
       const params = buildQueryParams(currentFilters);
-      let res = await fetch(`/api/report/analytics?${params.toString()}`);
-      if (!res.ok) {
-        const m = currentFilters.month || 'all';
-        res = await fetch(`./data/analytics-${m}.json`);
-      }
+      const res = await fetch(`/api/report/analytics?${params.toString()}`);
       if (res.ok) {
         const data: AnalyticsResponse = await res.json();
         setAnalytics(data);
+        setIsLoadingAnalytics(false);
+        return;
       }
+    } catch {
+      // Server not available (e.g. GitHub Pages) -> Fall through to client engine
+    }
+
+    // Dynamic Client Engine for GitHub Pages
+    try {
+      const rawRows = await loadMonthData(currentFilters.month);
+      const filtered = rawRows.filter((r) => matchFilter(r, currentFilters));
+      const result = computeAnalytics(filtered);
+      setAnalytics(result);
     } catch (err) {
-      try {
-        const m = currentFilters.month || 'all';
-        const fallbackRes = await fetch(`./data/analytics-${m}.json`);
-        if (fallbackRes.ok) {
-          const data: AnalyticsResponse = await fallbackRes.json();
-          setAnalytics(data);
-        }
-      } catch (staticErr) {
-        console.error('Failed to fetch analytics:', staticErr);
-      }
+      console.error('Client analytics error:', err);
     } finally {
       setIsLoadingAnalytics(false);
     }
@@ -539,15 +545,6 @@ export default function App() {
             Sistem Laporan Bulanan Logistik &bull; Sinkronisasi Data Spreadsheet Real-Time
           </span>
           <div className="flex items-center gap-3">
-            <a
-              href="https://docs.google.com/spreadsheets/d/1bdD0HshoPpbbhMNzlCfAfV4UGUOaSwjhoYMmLLbbJ_I/edit?gid=1566921166#gid=1566921166"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline flex items-center gap-1"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Google Sheets
-            </a>
-            <span>&bull;</span>
             <button
               onClick={() => setShowPrintModal(true)}
               className="text-slate-600 hover:text-blue-600 transition"

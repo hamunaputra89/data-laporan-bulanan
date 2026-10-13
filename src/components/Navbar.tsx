@@ -1,10 +1,8 @@
 import React from 'react';
 import { 
-  FileSpreadsheet, 
   RefreshCw, 
   Download, 
   Printer, 
-  ExternalLink, 
   CheckCircle2,
   Clock,
   Layers
@@ -28,8 +26,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTriggerSync,
   isSyncing,
 }) => {
-  const spreadsheetUrl = "https://docs.google.com/spreadsheets/d/1bdD0HshoPpbbhMNzlCfAfV4UGUOaSwjhoYMmLLbbJ_I/edit?gid=1566921166#gid=1566921166";
-
   const getExportUrl = () => {
     const params = new URLSearchParams();
     if (filters.month && filters.month !== 'all') params.set('month', filters.month);
@@ -79,19 +75,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* View Original Spreadsheet */}
-            <a
-              href={spreadsheetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 transition"
-              title="Buka Spreadsheet Asli di Google Sheets"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Google Sheet</span>
-              <ExternalLink className="w-3 h-3 opacity-60" />
-            </a>
-
             {/* Sync from Google Sheets */}
             <button
               onClick={onTriggerSync}

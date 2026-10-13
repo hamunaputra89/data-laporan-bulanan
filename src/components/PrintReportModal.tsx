@@ -70,7 +70,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   Divisi Manajemen Gudang, Fulfillment & Distribusi Ekspedisi
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Sumber Data: Google Spreadsheet ID <span className="font-mono">1bdD0HshoPpbbhMNzlCfAfV4UGUOaSwjhoYMmLLbbJ_I</span>
+                  Sistem Database Warehouse & Fulfillment Terverifikasi
                 </p>
               </div>
               <div className="text-right">
