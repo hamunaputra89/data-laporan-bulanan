@@ -9,7 +9,7 @@ import {
   Clock, 
   Truck, 
   User, 
-  ExternalLink,
+  Download,
   Eye
 } from 'lucide-react';
 import { OrderItem } from '../types.ts';
@@ -29,6 +29,7 @@ interface OrdersTableProps {
   sortBy: string;
   sortOrder: 'asc' | 'desc';
   onSortChange: (col: string) => void;
+  onExport?: () => void;
 }
 
 export const OrdersTable: React.FC<OrdersTableProps> = ({
@@ -41,6 +42,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
   sortBy,
   sortOrder,
   onSortChange,
+  onExport,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -82,19 +84,34 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
           </p>
         </div>
 
-        {/* Page size limit */}
-        <div className="flex items-center gap-2 text-xs text-slate-600">
-          <span>Tampilkan:</span>
-          <select
-            value={pagination.limit}
-            onChange={(e) => onLimitChange(parseInt(e.target.value, 10))}
-            className="border border-slate-200 rounded-lg px-2.5 py-1 bg-slate-50 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="15">15 per halaman</option>
-            <option value="25">25 per halaman</option>
-            <option value="50">50 per halaman</option>
-            <option value="100">100 per halaman</option>
-          </select>
+        {/* Actions & Page size limit */}
+        <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-600">
+          {onExport && (
+            <button
+              onClick={onExport}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold transition"
+              title="Unduh seluruh data yang telah difilter dan disortir dalam format CSV / Excel"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-600" />
+              <span>
+                Export {pagination.total > 0 ? `${pagination.total.toLocaleString('id-ID')} Data` : 'CSV'}
+              </span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <span>Tampilkan:</span>
+            <select
+              value={pagination.limit}
+              onChange={(e) => onLimitChange(parseInt(e.target.value, 10))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1 bg-slate-50 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="15">15 per halaman</option>
+              <option value="25">25 per halaman</option>
+              <option value="50">50 per halaman</option>
+              <option value="100">100 per halaman</option>
+            </select>
+          </div>
         </div>
       </div>
 

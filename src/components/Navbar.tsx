@@ -3,9 +3,8 @@ import {
   RefreshCw, 
   Download, 
   Printer, 
-  CheckCircle2,
-  Clock,
-  Layers
+  Clock, 
+  Layers 
 } from 'lucide-react';
 import { SystemStatus, FilterState } from '../types.ts';
 
@@ -15,7 +14,9 @@ interface NavbarProps {
   onRefresh: () => void;
   onOpenPrintModal: () => void;
   onTriggerSync: () => void;
+  onExport: () => void;
   isSyncing: boolean;
+  filteredCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -24,22 +25,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefresh,
   onOpenPrintModal,
   onTriggerSync,
+  onExport,
   isSyncing,
+  filteredCount,
 }) => {
-  const getExportUrl = () => {
-    const params = new URLSearchParams();
-    if (filters.month && filters.month !== 'all') params.set('month', filters.month);
-    if (filters.startDate) params.set('startDate', filters.startDate);
-    if (filters.endDate) params.set('endDate', filters.endDate);
-    if (filters.status && filters.status !== 'all') params.set('status', filters.status);
-    if (filters.courier && filters.courier !== 'all') params.set('courier', filters.courier);
-    if (filters.packer && filters.packer !== 'all') params.set('packer', filters.packer);
-    if (filters.sloc && filters.sloc !== 'all') params.set('sloc', filters.sloc);
-    if (filters.handover && filters.handover !== 'all') params.set('handover', filters.handover);
-    if (filters.search) params.set('search', filters.search);
-    return `/api/export?${params.toString()}`;
-  };
-
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -60,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                <span>Database Terindeks: {status?.totalRows ? status.totalRows.toLocaleString('id-ID') : '398.532'} Pesanan</span>
+                <span>Database: {status?.totalRows ? status.totalRows.toLocaleString('id-ID') : '398.532'} Pesanan</span>
                 {status?.meta?.lastSync && (
                   <>
                     <span className="text-slate-600">•</span>
@@ -75,7 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Sync from Google Sheets */}
+            {/* Sync from Google Sheets / Upload Modal */}
             <button
               onClick={onTriggerSync}
               disabled={isSyncing}
@@ -84,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-amber-950/70 text-amber-300 border border-amber-800/80 cursor-wait' 
                   : 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
               }`}
-              title="Sinkronkan data terbaru langsung dari Google Sheets"
+              title="Sinkronkan data terbaru atau unggah CSV Google Sheets"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-400' : 'text-blue-400'}`} />
               <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Data'}</span>
@@ -100,16 +89,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden sm:inline">Cetak Laporan</span>
             </button>
 
-            {/* Export CSV */}
-            <a
-              href={getExportUrl()}
-              download
+            {/* Export Filtered & Sorted CSV */}
+            <button
+              onClick={onExport}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition"
-              title="Unduh data terfilter dalam format file CSV / Excel"
+              title="Unduh seluruh data yang telah difilter dan disortir dalam format CSV / Excel"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </a>
+              <span>
+                Export CSV {filteredCount !== undefined ? `(${filteredCount.toLocaleString('id-ID')})` : ''}
+              </span>
+            </button>
           </div>
         </div>
       </div>

@@ -13,13 +13,53 @@ const DB_PATH = path.join(__dirname, 'data', 'warehouse.db');
 const META_PATH = path.join(__dirname, 'data', 'meta.json');
 
 let db: DatabaseSync | null = null;
+let isSyncing = false;
+let syncProgress = '';
 
-function getDb(): DatabaseSync {
+function startSyncProcess(): boolean {
+  if (isSyncing) return false;
+
+  isSyncing = true;
+  syncProgress = 'Memulai unduhan data dari Google Spreadsheet...';
+
+  const pyProcess = spawn('python3', [path.join(__dirname, 'scripts', 'sync.py')]);
+
+  pyProcess.stdout.on('data', (data) => {
+    syncProgress = data.toString().trim();
+    console.log('[Sync Output]:', syncProgress);
+  });
+
+  pyProcess.stderr.on('data', (data) => {
+    console.error('[Sync Error]:', data.toString());
+  });
+
+  pyProcess.on('close', (code) => {
+    isSyncing = false;
+    if (code === 0) {
+      syncProgress = 'Sinkronisasi berhasil diselesaikan!';
+      reloadDb();
+    } else {
+      syncProgress = `Gagal sinkronisasi (exit code ${code})`;
+    }
+  });
+
+  return true;
+}
+
+function getDb(): DatabaseSync | null {
   if (!db) {
     if (!fs.existsSync(DB_PATH)) {
-      throw new Error('Database file does not exist yet');
+      if (!isSyncing) {
+        startSyncProcess();
+      }
+      return null;
     }
-    db = new DatabaseSync(DB_PATH);
+    try {
+      db = new DatabaseSync(DB_PATH);
+    } catch (e) {
+      console.warn('Failed to open database file:', e);
+      return null;
+    }
   }
   return db;
 }
@@ -34,15 +74,17 @@ function reloadDb(): void {
     db = null;
   }
   if (fs.existsSync(DB_PATH)) {
-    db = new DatabaseSync(DB_PATH);
+    try {
+      db = new DatabaseSync(DB_PATH);
+    } catch (e) {
+      console.warn('Failed to reload database:', e);
+    }
   }
 }
 
 const app = express();
 app.use(express.json());
 
-let isSyncing = false;
-let syncProgress = '';
 
 // Helper to build WHERE conditions
 function buildFilter(query: Record<string, any>) {
@@ -131,6 +173,16 @@ app.get('/api/status', (req: Request, res: Response) => {
     }
 
     const database = getDb();
+    if (!database) {
+      return res.json({
+        isReady: false,
+        isSyncing,
+        syncProgress,
+        meta,
+        message: 'Database is initializing...',
+      });
+    }
+
     const countRow: any = database.prepare('SELECT COUNT(*) as count FROM orders').get();
     
     // Get unique months
@@ -214,30 +266,7 @@ app.post('/api/sync', (req: Request, res: Response) => {
     return res.json({ status: 'already_running', message: 'Sync is already in progress' });
   }
 
-  isSyncing = true;
-  syncProgress = 'Memulai unduhan data dari Google Spreadsheet...';
-
-  const pyProcess = spawn('python3', [path.join(__dirname, 'scripts', 'sync.py')]);
-
-  pyProcess.stdout.on('data', (data) => {
-    syncProgress = data.toString().trim();
-    console.log('[Sync Output]:', syncProgress);
-  });
-
-  pyProcess.stderr.on('data', (data) => {
-    console.error('[Sync Error]:', data.toString());
-  });
-
-  pyProcess.on('close', (code) => {
-    isSyncing = false;
-    if (code === 0) {
-      syncProgress = 'Sinkronisasi berhasil diselesaikan!';
-      reloadDb();
-    } else {
-      syncProgress = `Gagal sinkronisasi (exit code ${code})`;
-    }
-  });
-
+  startSyncProcess();
   res.json({ status: 'started', message: 'Sync process started in background' });
 });
 
@@ -261,6 +290,13 @@ function getPreviousMonth(ym: string): string | null {
 app.get('/api/report/analytics', (req: Request, res: Response) => {
   try {
     const database = getDb();
+    if (!database) {
+      return res.status(503).json({
+        error: 'Database is initializing. Please wait a moment.',
+        isReady: false,
+        isSyncing,
+      });
+    }
     const { whereClause, params } = buildFilter(req.query);
 
     // Main KPI Summary
@@ -478,6 +514,14 @@ app.get('/api/report/analytics', (req: Request, res: Response) => {
 app.get('/api/orders', (req: Request, res: Response) => {
   try {
     const database = getDb();
+    if (!database) {
+      return res.status(503).json({
+        error: 'Database is initializing. Please wait a moment.',
+        isReady: false,
+        data: [],
+        pagination: { page: 1, limit: 25, total: 0, totalPages: 1 },
+      });
+    }
     const { whereClause, params } = buildFilter(req.query);
 
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
@@ -518,13 +562,37 @@ app.get('/api/orders', (req: Request, res: Response) => {
   }
 });
 
-// 5. CSV Export API
+// 5. CSV Export API (Respects filter and user sort selection)
 app.get('/api/export', (req: Request, res: Response) => {
   try {
     const database = getDb();
+    if (!database) {
+      return res.status(503).send('Database is initializing. Please wait a moment.');
+    }
     const { whereClause, params } = buildFilter(req.query);
 
-    const filename = `Laporan_Bulanan_${req.query.month || 'Semua'}_${Date.now()}.csv`;
+    const allowedSortCols: Record<string, string> = {
+      order_id: 'order_id',
+      status: 'status',
+      mit_dn: 'mit_dn',
+      sku: 'sku',
+      courier: 'courier',
+      awb: 'awb',
+      sn: 'sn',
+      sloc: 'sloc',
+      packer: 'packer',
+      print_date: 'print_date',
+      handover_no: 'handover_no',
+    };
+    const sortByParam = req.query.sortBy as string;
+    const sortCol = allowedSortCols[sortByParam] || 'print_date';
+    const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+    const monthName = (req.query.month as string) || 'Semua';
+    const courierPart = req.query.courier && req.query.courier !== 'all' ? `_${(req.query.courier as string).replace(/[\s\(\)]+/g, '_')}` : '';
+    const slocPart = req.query.sloc && req.query.sloc !== 'all' ? `_SLOC${req.query.sloc}` : '';
+    const filename = `Laporan_Logistik_${monthName}${courierPart}${slocPart}_urut_${sortCol}_${sortOrder.toLowerCase()}.csv`;
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -532,13 +600,13 @@ app.get('/api/export', (req: Request, res: Response) => {
     res.write('\uFEFF');
     res.write('Marketplace Order ID,Status,MIT DN,SKU Number,Kurir,AWB (Resi),SN,SLOC,Packer,Print Date,No Handover\n');
 
-    // Limit export to 25,000 for browser memory safety
+    // Export up to 100,000 rows according to current filtered and sorted criteria
     const exportSql = `
       SELECT order_id, status, mit_dn, sku, courier, awb, sn, sloc, packer, print_date, handover_no
       FROM orders
       ${whereClause}
-      ORDER BY print_date DESC
-      LIMIT 25000
+      ORDER BY ${sortCol} ${sortOrder}
+      LIMIT 100000
     `;
 
     const rows = database.prepare(exportSql).all(...params) as any[];
@@ -569,6 +637,11 @@ app.get('/api/export', (req: Request, res: Response) => {
 
 // Setup Vite middleware in dev or static files in prod
 async function startServer() {
+  if (!fs.existsSync(DB_PATH)) {
+    console.log('Database not found on startup. Triggering initial sync in background...');
+    startSyncProcess();
+  }
+
   if (process.env.NODE_ENV === 'production' && fs.existsSync(path.join(__dirname, 'dist'))) {
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => {

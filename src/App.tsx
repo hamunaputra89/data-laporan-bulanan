@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   BarChart3, 
   Truck, 
@@ -6,12 +6,6 @@ import {
   Package, 
   FileText, 
   RefreshCw, 
-  AlertCircle,
-  Clock,
-  ExternalLink,
-  ChevronRight,
-  TrendingUp,
-  FileSpreadsheet,
   ClipboardCheck
 } from 'lucide-react';
 
@@ -33,12 +27,15 @@ import { OrdersTable } from './components/OrdersTable.tsx';
 import { OrderDetailModal } from './components/OrderDetailModal.tsx';
 import { PrintReportModal } from './components/PrintReportModal.tsx';
 import { HandoverAnalysis } from './components/HandoverAnalysis.tsx';
+import { SyncModal } from './components/SyncModal.tsx';
 import { 
+  RawRow,
   loadMonthData, 
   matchFilter, 
   computeAnalytics, 
   computeOrders, 
-  syncDirectFromGoogleSheets 
+  exportFilteredRowsToCSV,
+  getDataUrl 
 } from './clientDataEngine.ts';
 
 const DEFAULT_FILTERS: FilterState = {
@@ -58,6 +55,7 @@ export default function App() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [currentFilteredRows, setCurrentFilteredRows] = useState<RawRow[]>([]);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 25,
@@ -69,34 +67,42 @@ export default function App() {
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'couriers' | 'packers' | 'products' | 'handover' | 'orders'>('overview');
   const [sortBy, setSortBy] = useState('print_date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [isBackendActive, setIsBackendActive] = useState(false);
 
-  // 1. Fetch system status & filter options (with GitHub Pages static fallback)
+  const prevFiltersRef = useRef<string>('');
+
+  // 1. Fetch system status & filter options (supports server & GitHub Pages static fallback)
   const fetchStatus = useCallback(async () => {
     try {
-      let res = await fetch('/api/status');
-      if (!res.ok) {
-        res = await fetch('./data/status.json');
-      }
+      const res = await fetch('/api/status');
       if (res.ok) {
         const data: SystemStatus = await res.json();
         setSystemStatus(data);
-        setIsSyncing(data.isSyncing);
+        const isDbReady = data.isReady !== false && ((data.totalRows || 0) > 0 || (data.meta?.rowCount || 0) > 0);
+        setIsBackendActive(isDbReady);
+        setIsSyncing(Boolean(data.isSyncing));
+        return;
       }
-    } catch (err) {
-      try {
-        const fallbackRes = await fetch('./data/status.json');
-        if (fallbackRes.ok) {
-          const data: SystemStatus = await fallbackRes.json();
-          setSystemStatus(data);
-        }
-      } catch (staticErr) {
-        console.error('Failed to fetch status:', staticErr);
+    } catch {
+      // Backend not available -> GitHub Pages static mode
+    }
+
+    try {
+      const staticUrl = getDataUrl('status.json');
+      const fallbackRes = await fetch(staticUrl);
+      if (fallbackRes.ok) {
+        const data: SystemStatus = await fallbackRes.json();
+        setSystemStatus(data);
+        setIsBackendActive(false);
       }
+    } catch (staticErr) {
+      console.warn('Gagal memuat status statis:', staticErr);
     }
   }, []);
 
@@ -119,109 +125,196 @@ export default function App() {
     return params;
   }, []);
 
-  // 3. Fetch Analytics whenever filters change (supports server & GitHub Pages client engine)
-  const fetchAnalytics = useCallback(async (currentFilters: FilterState) => {
-    setIsLoadingAnalytics(true);
-    try {
-      const params = buildQueryParams(currentFilters);
-      const res = await fetch(`/api/report/analytics?${params.toString()}`);
-      if (res.ok) {
-        const data: AnalyticsResponse = await res.json();
-        setAnalytics(data);
-        setIsLoadingAnalytics(false);
-        return;
-      }
-    } catch {
-      // Server not available (e.g. GitHub Pages) -> Fall through to client engine
-    }
-
-    // Dynamic Client Engine for GitHub Pages
-    try {
-      const rawRows = await loadMonthData(currentFilters.month);
-      const filtered = rawRows.filter((r) => matchFilter(r, currentFilters));
-      const result = computeAnalytics(filtered);
-      setAnalytics(result);
-    } catch (err) {
-      console.error('Client analytics error:', err);
-    } finally {
-      setIsLoadingAnalytics(false);
-    }
-  }, [buildQueryParams]);
-
-  // 4. Fetch Orders list with pagination & sorting (with GitHub Pages static fallback)
-  const fetchOrders = useCallback(async (
+  // 3. Unified Data Loading Engine: Filters & Analytics
+  const loadData = useCallback(async (
     currentFilters: FilterState,
     page: number,
     limit: number,
     sBy: string,
-    sOrder: 'asc' | 'desc'
+    sOrder: 'asc' | 'desc',
+    forceReloadRows: boolean = false
   ) => {
-    setIsLoadingOrders(true);
-    try {
-      const params = buildQueryParams(currentFilters);
-      params.set('page', page.toString());
-      params.set('limit', limit.toString());
-      params.set('sortBy', sBy);
-      params.set('sortOrder', sOrder);
+    const filterKey = JSON.stringify(currentFilters);
+    const filtersChanged = filterKey !== prevFiltersRef.current || forceReloadRows;
+    prevFiltersRef.current = filterKey;
 
-      let res = await fetch(`/api/orders?${params.toString()}`);
-      if (!res.ok) {
-        const m = currentFilters.month || 'all';
-        res = await fetch(`./data/orders-${m}.json`);
-      }
-      if (res.ok) {
-        const data = await res.json();
-        setOrders(data.data || []);
-        setPagination(data.pagination || { page, limit, total: (data.data || []).length, totalPages: 1 });
-      }
-    } catch (err) {
+    if (filtersChanged) {
+      setIsLoadingAnalytics(true);
+      setIsLoadingOrders(true);
+    }
+
+    // Try backend if active
+    let backendWorked = false;
+    if (isBackendActive) {
       try {
-        const m = currentFilters.month || 'all';
-        const fallbackRes = await fetch(`./data/orders-${m}.json`);
-        if (fallbackRes.ok) {
-          const data = await fallbackRes.json();
-          setOrders(data.data || []);
-          setPagination(data.pagination || { page: 1, limit: 25, total: (data.data || []).length, totalPages: 1 });
+        const params = buildQueryParams(currentFilters);
+        const res = await fetch(`/api/report/analytics?${params.toString()}`);
+        if (res.ok) {
+          const data: AnalyticsResponse = await res.json();
+          setAnalytics(data);
+
+          params.set('page', page.toString());
+          params.set('limit', limit.toString());
+          params.set('sortBy', sBy);
+          params.set('sortOrder', sOrder);
+          const oRes = await fetch(`/api/orders?${params.toString()}`);
+          if (oRes.ok) {
+            const oData = await oRes.json();
+            setOrders(oData.data || []);
+            setPagination(oData.pagination || { page, limit, total: (oData.data || []).length, totalPages: 1 });
+            backendWorked = true;
+          }
         }
-      } catch (staticErr) {
-        console.error('Failed to fetch orders:', staticErr);
+      } catch {
+        backendWorked = false;
       }
+    }
+
+    if (backendWorked) {
+      setIsLoadingAnalytics(false);
+      setIsLoadingOrders(false);
+      return;
+    }
+
+    // Client Data Engine (100% works on GitHub Pages & offline)
+    try {
+      let filtered: RawRow[] = [];
+
+      if (filtersChanged || currentFilteredRows.length === 0) {
+        const rawRows = await loadMonthData(currentFilters.month);
+        filtered = rawRows.filter((r) => matchFilter(r, currentFilters));
+        setCurrentFilteredRows(filtered);
+
+        const analyticsResult = computeAnalytics(filtered);
+        setAnalytics(analyticsResult);
+      } else {
+        filtered = currentFilteredRows;
+      }
+
+      const ordersResult = computeOrders(filtered, page, limit, sBy, sOrder);
+      setOrders(ordersResult.orders);
+      setPagination({
+        page,
+        limit,
+        total: ordersResult.total,
+        totalPages: ordersResult.totalPages,
+      });
+    } catch (err) {
+      console.error('Client data engine error:', err);
     } finally {
+      setIsLoadingAnalytics(false);
       setIsLoadingOrders(false);
     }
-  }, [buildQueryParams]);
+  }, [buildQueryParams, isBackendActive, currentFilteredRows]);
 
   // Trigger data load when filters change
   useEffect(() => {
-    fetchAnalytics(filters);
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    fetchOrders(filters, 1, pagination.limit, sortBy, sortOrder);
-  }, [filters, fetchAnalytics, fetchOrders, sortBy, sortOrder]);
+    loadData(filters, 1, pagination.limit, sortBy, sortOrder, true);
+  }, [filters, sortBy, sortOrder]);
 
   // Handle page change
   const handlePageChange = (newPage: number) => {
     setPagination((prev) => ({ ...prev, page: newPage }));
-    fetchOrders(filters, newPage, pagination.limit, sortBy, sortOrder);
+    if (!isBackendActive && currentFilteredRows.length > 0) {
+      const ordersResult = computeOrders(currentFilteredRows, newPage, pagination.limit, sortBy, sortOrder);
+      setOrders(ordersResult.orders);
+    } else {
+      loadData(filters, newPage, pagination.limit, sortBy, sortOrder, false);
+    }
   };
 
   // Handle limit change
   const handleLimitChange = (newLimit: number) => {
     setPagination((prev) => ({ ...prev, limit: newLimit, page: 1 }));
-    fetchOrders(filters, 1, newLimit, sortBy, sortOrder);
+    if (!isBackendActive && currentFilteredRows.length > 0) {
+      const ordersResult = computeOrders(currentFilteredRows, 1, newLimit, sortBy, sortOrder);
+      setOrders(ordersResult.orders);
+      setPagination({
+        page: 1,
+        limit: newLimit,
+        total: ordersResult.total,
+        totalPages: ordersResult.totalPages,
+      });
+    } else {
+      loadData(filters, 1, newLimit, sortBy, sortOrder, false);
+    }
   };
 
   // Handle sort column change
   const handleSortChange = (col: string) => {
-    if (sortBy === col) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(col);
-      setSortOrder('desc');
+    const newSortOrder = sortBy === col && sortOrder === 'desc' ? 'asc' : 'desc';
+    setSortBy(col);
+    setSortOrder(newSortOrder);
+
+    if (!isBackendActive && currentFilteredRows.length > 0) {
+      const ordersResult = computeOrders(currentFilteredRows, pagination.page, pagination.limit, col, newSortOrder);
+      setOrders(ordersResult.orders);
     }
   };
 
+  // Export Filtered & Sorted Records directly to CSV
+  const handleExportFiltered = useCallback(async () => {
+    setSyncNotice('Menyiapkan berkas export CSV untuk data yang difilter & disortir...');
+
+    try {
+      const monthName = filters.month && filters.month !== 'all' ? filters.month : 'SemuaBulan';
+      const courierPart = filters.courier !== 'all' ? `_${filters.courier.replace(/[\s\(\)]+/g, '_')}` : '';
+      const slocPart = filters.sloc !== 'all' ? `_SLOC${filters.sloc}` : '';
+      const statusPart = filters.status !== 'all' ? `_${filters.status}` : '';
+      const sortPart = `_urut_${sortBy}_${sortOrder}`;
+      const customFileName = `Laporan_Logistik_${monthName}${courierPart}${slocPart}${statusPart}${sortPart}.csv`;
+
+      if (isBackendActive) {
+        // Direct download from server backend with filter and sort params
+        const params = buildQueryParams(filters);
+        params.set('sortBy', sortBy);
+        params.set('sortOrder', sortOrder);
+        const exportUrl = `/api/export?${params.toString()}`;
+
+        const a = document.createElement('a');
+        a.href = exportUrl;
+        a.download = customFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        setSyncNotice('Berkas export CSV berhasil diunduh!');
+        setTimeout(() => setSyncNotice(null), 3500);
+        return;
+      }
+
+      // Client Data Engine (offline / GitHub Pages mode)
+      let rowsToExport = currentFilteredRows;
+      if (!rowsToExport || rowsToExport.length === 0) {
+        const rawRows = await loadMonthData(filters.month);
+        rowsToExport = rawRows.filter((r) => matchFilter(r, filters));
+        setCurrentFilteredRows(rowsToExport);
+      }
+
+      if (rowsToExport.length === 0) {
+        setSyncNotice('Tidak ada data yang cocok dengan filter untuk diekspor.');
+        setTimeout(() => setSyncNotice(null), 4000);
+        return;
+      }
+
+      exportFilteredRowsToCSV(rowsToExport, sortBy, sortOrder, customFileName);
+      setSyncNotice(`Export CSV berhasil (${rowsToExport.length.toLocaleString('id-ID')} data diunduh)!`);
+      setTimeout(() => setSyncNotice(null), 3500);
+    } catch (err) {
+      console.error('Export error:', err);
+      setSyncNotice('Gagal menyiapkan export CSV. Silakan coba kembali.');
+      setTimeout(() => setSyncNotice(null), 4000);
+    }
+  }, [buildQueryParams, currentFilteredRows, filters, isBackendActive, sortBy, sortOrder]);
+
   // Trigger sync from Google Sheet
   const handleTriggerSync = async () => {
+    if (!isBackendActive) {
+      // In GitHub Pages (static), open SyncModal for CSV upload or GitHub Actions
+      setShowSyncModal(true);
+      return;
+    }
+
     setIsSyncing(true);
     setSyncNotice('Memulai sinkronisasi data dari Google Spreadsheet...');
     try {
@@ -229,7 +322,6 @@ export default function App() {
       const data = await res.json();
       setSyncNotice(data.message || 'Sinkronisasi sedang diproses...');
 
-      // Poll status for a few cycles
       const checkInterval = setInterval(async () => {
         const sRes = await fetch('/api/status');
         if (sRes.ok) {
@@ -239,17 +331,14 @@ export default function App() {
             clearInterval(checkInterval);
             setIsSyncing(false);
             setSyncNotice('Sinkronisasi selesai! Data telah diperbarui.');
-            fetchAnalytics(filters);
-            fetchOrders(filters, pagination.page, pagination.limit, sortBy, sortOrder);
+            loadData(filters, 1, pagination.limit, sortBy, sortOrder, true);
             setTimeout(() => setSyncNotice(null), 4000);
           }
         }
       }, 3000);
-    } catch (e: any) {
-      console.error(e);
+    } catch {
       setIsSyncing(false);
-      setSyncNotice('Gagal sinkronisasi.');
-      setTimeout(() => setSyncNotice(null), 4000);
+      setShowSyncModal(true);
     }
   };
 
@@ -275,13 +364,12 @@ export default function App() {
       <Navbar
         status={systemStatus}
         filters={filters}
-        onRefresh={() => {
-          fetchAnalytics(filters);
-          fetchOrders(filters, pagination.page, pagination.limit, sortBy, sortOrder);
-        }}
+        onRefresh={() => loadData(filters, pagination.page, pagination.limit, sortBy, sortOrder, true)}
         onOpenPrintModal={() => setShowPrintModal(true)}
         onTriggerSync={handleTriggerSync}
+        onExport={handleExportFiltered}
         isSyncing={isSyncing}
+        filteredCount={pagination.total}
       />
 
       {/* Sync Notification Banner */}
@@ -407,7 +495,7 @@ export default function App() {
               />
             </div>
 
-            {/* Top Orders Quick Table */}
+            {/* Orders Table with Export */}
             <OrdersTable
               orders={orders}
               pagination={pagination}
@@ -418,6 +506,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -439,6 +528,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -460,6 +550,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -482,6 +573,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -517,6 +609,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -533,6 +626,7 @@ export default function App() {
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSortChange={handleSortChange}
+              onExport={handleExportFiltered}
             />
           </div>
         )}
@@ -542,9 +636,16 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 py-5 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            Sistem Laporan Bulanan Logistik &bull; Sinkronisasi Data Spreadsheet Real-Time
+            Sistem Laporan Bulanan Logistik &bull; Filter &amp; Export Data Otomatis
           </span>
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportFiltered}
+              className="text-slate-600 hover:text-blue-600 transition font-medium"
+            >
+              Export CSV Terfilter
+            </button>
+            <span className="text-slate-300">•</span>
             <button
               onClick={() => setShowPrintModal(true)}
               className="text-slate-600 hover:text-blue-600 transition"
@@ -572,6 +673,19 @@ export default function App() {
           monthLabel={getMonthLabel(filters.month)}
         />
       )}
+
+      {/* Data Sync & Upload Modal */}
+      <SyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onDataImported={(status) => {
+          setSystemStatus(status);
+          loadData(filters, 1, pagination.limit, sortBy, sortOrder, true);
+        }}
+        isBackendActive={isBackendActive}
+        onTriggerBackendSync={handleTriggerSync}
+        isSyncing={isSyncing}
+      />
     </div>
   );
 }

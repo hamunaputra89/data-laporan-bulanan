@@ -566,3 +566,78 @@ export function parseCSVToRows(csvText: string): { rows: RawRow[]; status: Syste
 
   return { rows, status };
 }
+
+// Export Filtered & Sorted Records directly to CSV file in browser
+export function exportFilteredRowsToCSV(
+  rows: RawRow[],
+  sortBy: string = 'print_date',
+  sortOrder: 'asc' | 'desc' = 'desc',
+  customFileName?: string
+) {
+  const colIndexMap: Record<string, number> = {
+    order_id: 0,
+    status: 1,
+    mit_dn: 2,
+    sku: 3,
+    courier: 4,
+    awb: 5,
+    sn: 6,
+    sloc: 7,
+    packer: 8,
+    print_date: 9,
+    handover_no: 10,
+  };
+
+  const sortIdx = colIndexMap[sortBy] ?? 9;
+
+  // Sort rows according to current user sort criteria
+  const sorted = [...rows].sort((a, b) => {
+    const valA = a[sortIdx] || '';
+    const valB = b[sortIdx] || '';
+    const cmp = valA.localeCompare(valB);
+    return sortOrder === 'asc' ? cmp : -cmp;
+  });
+
+  const headers = [
+    'marketplace_order_id',
+    'status',
+    'mit_dn',
+    'sku_number',
+    'courier',
+    'awb',
+    'sn',
+    'SLOC',
+    'Packer',
+    'Printdate',
+    'handover_no'
+  ];
+
+  const escapeCSV = (val: string) => {
+    if (val === null || val === undefined) return '""';
+    const s = String(val);
+    if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return `"${s}"`;
+  };
+
+  const csvLines = [headers.join(',')];
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i];
+    csvLines.push(r.map(escapeCSV).join(','));
+  }
+
+  // Prepend UTF-8 BOM so Excel in Windows/Mac opens characters and text columns cleanly
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const fileName = customFileName || `laporan_logistik_terfilter_${new Date().toISOString().slice(0, 10)}.csv`;
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
