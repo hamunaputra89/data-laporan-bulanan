@@ -14,6 +14,7 @@ interface NavbarProps {
   onRefresh: () => void;
   onOpenPrintModal: () => void;
   onTriggerSync: () => void;
+  onOpenSyncModal?: () => void;
   onExport: () => void;
   isSyncing: boolean;
   filteredCount?: number;
@@ -25,6 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefresh,
   onOpenPrintModal,
   onTriggerSync,
+  onOpenSyncModal,
   onExport,
   isSyncing,
   filteredCount,
@@ -64,6 +66,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Auto-Sync Quick Status Badge */}
+            <button
+              onClick={onOpenSyncModal || onTriggerSync}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+              title="Klik untuk membuka pengaturan Auto-Sync & Pembaruan"
+            >
+              <span className={`w-2 h-2 rounded-full ${status?.autoSync?.enabled !== false ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              <span className="hidden sm:inline">Auto-Sync:</span>
+              <span className="font-semibold text-emerald-400">
+                {status?.autoSync?.enabled !== false ? `${status?.autoSync?.intervalMinutes || 30}m` : 'Mati'}
+              </span>
+            </button>
+
             {/* Sync from Google Sheets / Upload Modal */}
             <button
               onClick={onTriggerSync}
@@ -73,10 +88,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-amber-950/70 text-amber-300 border border-amber-800/80 cursor-wait' 
                   : 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
               }`}
-              title="Sinkronkan data terbaru atau unggah CSV Google Sheets"
+              title="Sinkronkan data terbaru dari Google Sheets sekarang"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-400' : 'text-blue-400'}`} />
-              <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Data'}</span>
+              <span className="hidden md:inline">{isSyncing ? 'Menyinkronkan...' : 'Sinkron Sekarang'}</span>
+              <span className="md:hidden">{isSyncing ? 'Sync...' : 'Sync'}</span>
             </button>
 
             {/* Print Official Monthly Report */}

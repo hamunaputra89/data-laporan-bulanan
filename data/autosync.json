@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "intervalMinutes": 30,
+  "lastSyncTime": null,
+  "nextSyncTime": "2026-10-14T10:05:14.707Z",
+  "totalRuns": 0,
+  "lastStatus": "idle",
+  "lastError": null
+}

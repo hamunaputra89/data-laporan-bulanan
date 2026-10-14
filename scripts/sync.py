@@ -129,7 +129,78 @@ def sync_data():
         json.dump(metadata, f, indent=2)
 
     print(f"Sync complete: {row_count} rows indexed in {metadata['syncDurationSec']}s")
+
+    # Generate public/data/status.json and month partitions for GitHub Pages / static deployment
+    print("Generating public/data/ for GitHub Pages and offline mode...")
+    os.makedirs("public/data", exist_ok=True)
+    c2 = sqlite3.connect(db_path)
+    c2_cur = c2.cursor()
+
+    c2_cur.execute("""
+        SELECT year_month, COUNT(*) 
+        FROM orders 
+        GROUP BY year_month 
+        ORDER BY CASE WHEN year_month = 'Tanpa Tanggal' THEN '0000' ELSE year_month END DESC
+    """)
+    months = [{"year_month": r[0], "count": r[1]} for r in c2_cur.fetchall()]
+
+    c2_cur.execute("SELECT status, COUNT(*) FROM orders WHERE status != '' GROUP BY status ORDER BY COUNT(*) DESC")
+    statuses = [{"status": r[0], "count": r[1]} for r in c2_cur.fetchall()]
+
+    c2_cur.execute("SELECT courier, COUNT(*) FROM orders WHERE courier != '' GROUP BY courier ORDER BY COUNT(*) DESC")
+    raw_couriers = [{"courier": r[0], "count": r[1]} for r in c2_cur.fetchall()]
+
+    c2_cur.execute("SELECT COUNT(*) FROM orders WHERE courier LIKE 'JNE%'")
+    jne_c = c2_cur.fetchone()[0] or 0
+    c2_cur.execute("SELECT COUNT(*) FROM orders WHERE courier LIKE 'J&T%'")
+    jnt_c = c2_cur.fetchone()[0] or 0
+    c2_cur.execute("SELECT COUNT(*) FROM orders WHERE courier LIKE 'SPX%'")
+    spx_c = c2_cur.fetchone()[0] or 0
+
+    couriers = [
+        {"courier": "JNE (Semua)", "count": jne_c},
+        {"courier": "J&T (Semua)", "count": jnt_c},
+        {"courier": "SPX (Semua)", "count": spx_c},
+        *raw_couriers
+    ]
+
+    c2_cur.execute("SELECT packer, COUNT(*) FROM orders WHERE packer != '' GROUP BY packer ORDER BY COUNT(*) DESC LIMIT 50")
+    packers = [{"packer": r[0], "count": r[1]} for r in c2_cur.fetchall()]
+
+    c2_cur.execute("SELECT sloc, COUNT(*) FROM orders WHERE sloc != '' GROUP BY sloc ORDER BY COUNT(*) DESC LIMIT 100")
+    slocs = [{"sloc": r[0], "count": r[1]} for r in c2_cur.fetchall()]
+
+    status_payload = {
+        "isReady": True,
+        "isSyncing": False,
+        "syncProgress": "",
+        "meta": metadata,
+        "totalRows": row_count,
+        "filterOptions": {
+            "months": months,
+            "statuses": statuses,
+            "couriers": couriers,
+            "packers": packers,
+            "slocs": slocs
+        }
+    }
+    with open("public/data/status.json", "w", encoding="utf-8") as f:
+        json.dump(status_payload, f, indent=2)
+
+    for m in months:
+        ym = m["year_month"]
+        c2_cur.execute("""
+            SELECT order_id, status, mit_dn, sku, courier, awb, sn, sloc, packer, print_date, handover_no
+            FROM orders WHERE year_month = ?
+        """, (ym,))
+        m_rows = c2_cur.fetchall()
+        with open(f"public/data/month-{ym}.json", "w", encoding="utf-8") as f:
+            json.dump(m_rows, f, separators=(',', ':'))
+
+    c2.close()
+    print("Static public/data/ files generated successfully.")
     return True
 
 if __name__ == "__main__":
     sync_data()
+

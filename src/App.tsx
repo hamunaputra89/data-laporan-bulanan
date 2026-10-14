@@ -342,6 +342,69 @@ export default function App() {
     }
   };
 
+  // Update Auto-Sync Settings
+  const handleUpdateAutoSync = useCallback(async (enabled: boolean, intervalMinutes: number) => {
+    if (isBackendActive) {
+      try {
+        const res = await fetch('/api/sync/auto', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, intervalMinutes }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSystemStatus((prev) => prev ? { ...prev, autoSync: data.autoSync } : null);
+          setSyncNotice(data.message || 'Pengaturan Auto-Sync berhasil diperbarui.');
+          setTimeout(() => setSyncNotice(null), 3500);
+        }
+      } catch (err) {
+        console.error('Failed to update auto-sync:', err);
+      }
+    } else {
+      localStorage.setItem('autosync_config', JSON.stringify({ enabled, intervalMinutes }));
+      setSystemStatus((prev) => prev ? {
+        ...prev,
+        autoSync: {
+          enabled,
+          intervalMinutes,
+          lastSyncTime: prev.meta?.lastSync || null,
+          totalRuns: 0,
+          lastStatus: 'idle',
+          lastError: null,
+        }
+      } : null);
+    }
+  }, [isBackendActive]);
+
+  // Periodic Auto-Sync status polling & automatic live refresh
+  useEffect(() => {
+    const pollInterval = isSyncing ? 3000 : 25000;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(isBackendActive ? '/api/status' : `${getDataUrl('status.json')}?_t=${Date.now()}`);
+        if (res.ok) {
+          const data: SystemStatus = await res.json();
+          // Check if data was updated by an auto-sync cycle
+          if (systemStatus?.meta?.lastSync && data.meta?.lastSync && data.meta.lastSync !== systemStatus.meta.lastSync) {
+            setSystemStatus(data);
+            setSyncNotice(`Auto-Sync: Data otomatis diperbarui (${(data.totalRows || 0).toLocaleString('id-ID')} pesanan)!`);
+            loadData(filters, 1, pagination.limit, sortBy, sortOrder, true);
+            setTimeout(() => setSyncNotice(null), 4000);
+          } else {
+            setSystemStatus((prev) => prev ? { ...prev, ...data } : data);
+          }
+          if (typeof data.isSyncing === 'boolean') {
+            setIsSyncing(data.isSyncing);
+          }
+        }
+      } catch {
+        // silent polling error
+      }
+    }, pollInterval);
+
+    return () => clearInterval(timer);
+  }, [filters, isBackendActive, isSyncing, loadData, pagination.limit, sortBy, sortOrder, systemStatus?.meta?.lastSync]);
+
   // Month label helper
   const getMonthLabel = (ym: string) => {
     if (!ym || ym === 'all') return 'Semua Periode';
@@ -367,6 +430,7 @@ export default function App() {
         onRefresh={() => loadData(filters, pagination.page, pagination.limit, sortBy, sortOrder, true)}
         onOpenPrintModal={() => setShowPrintModal(true)}
         onTriggerSync={handleTriggerSync}
+        onOpenSyncModal={() => setShowSyncModal(true)}
         onExport={handleExportFiltered}
         isSyncing={isSyncing}
         filteredCount={pagination.total}
@@ -685,6 +749,8 @@ export default function App() {
         isBackendActive={isBackendActive}
         onTriggerBackendSync={handleTriggerSync}
         isSyncing={isSyncing}
+        systemStatus={systemStatus}
+        onUpdateAutoSync={handleUpdateAutoSync}
       />
     </div>
   );

@@ -16,11 +16,86 @@ let db: DatabaseSync | null = null;
 let isSyncing = false;
 let syncProgress = '';
 
-function startSyncProcess(): boolean {
+interface AutoSyncConfig {
+  enabled: boolean;
+  intervalMinutes: number;
+  lastSyncTime?: string | null;
+  nextSyncTime?: string | null;
+  totalRuns: number;
+  lastStatus: 'idle' | 'running' | 'success' | 'error';
+  lastError: string | null;
+}
+
+const AUTOSYNC_CONFIG_PATH = path.join(__dirname, 'data', 'autosync.json');
+
+const autoSyncConfig: AutoSyncConfig = {
+  enabled: true,
+  intervalMinutes: 30, // 30 minutes default
+  lastSyncTime: null,
+  nextSyncTime: null,
+  totalRuns: 0,
+  lastStatus: 'idle',
+  lastError: null,
+};
+
+let autoSyncTimer: NodeJS.Timeout | null = null;
+
+function loadAutoSyncConfig() {
+  try {
+    if (fs.existsSync(AUTOSYNC_CONFIG_PATH)) {
+      const data = JSON.parse(fs.readFileSync(AUTOSYNC_CONFIG_PATH, 'utf-8'));
+      Object.assign(autoSyncConfig, data);
+    }
+  } catch (e) {
+    console.warn('Failed to load autosync config:', e);
+  }
+}
+
+function saveAutoSyncConfig() {
+  try {
+    const dir = path.dirname(AUTOSYNC_CONFIG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(AUTOSYNC_CONFIG_PATH, JSON.stringify(autoSyncConfig, null, 2));
+  } catch (e) {
+    console.warn('Failed to save autosync config:', e);
+  }
+}
+
+function scheduleNextAutoSync() {
+  if (autoSyncTimer) {
+    clearTimeout(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+
+  if (!autoSyncConfig.enabled) {
+    autoSyncConfig.nextSyncTime = null;
+    saveAutoSyncConfig();
+    return;
+  }
+
+  const intervalMs = Math.max(5, autoSyncConfig.intervalMinutes) * 60 * 1000;
+  const nextDate = new Date(Date.now() + intervalMs);
+  autoSyncConfig.nextSyncTime = nextDate.toISOString();
+  saveAutoSyncConfig();
+
+  console.log(`[AutoSync] Next recurring sync at ${autoSyncConfig.nextSyncTime} (${autoSyncConfig.intervalMinutes}m)`);
+
+  autoSyncTimer = setTimeout(() => {
+    console.log('[AutoSync] Recurring auto-sync triggered...');
+    const started = startSyncProcess('auto');
+    if (!started) {
+      setTimeout(scheduleNextAutoSync, 2 * 60 * 1000);
+    }
+  }, intervalMs);
+}
+
+function startSyncProcess(trigger: 'manual' | 'auto' | 'init' = 'manual'): boolean {
   if (isSyncing) return false;
 
   isSyncing = true;
-  syncProgress = 'Memulai unduhan data dari Google Spreadsheet...';
+  syncProgress = `Memulai unduhan data dari Google Spreadsheet (${trigger === 'auto' ? 'Auto-Sync Terjadwal' : trigger === 'init' ? 'Inisialisasi Awal' : 'Manual'})...`;
+  autoSyncConfig.lastStatus = 'running';
+  saveAutoSyncConfig();
 
   const pyProcess = spawn('python3', [path.join(__dirname, 'scripts', 'sync.py')]);
 
@@ -37,14 +112,23 @@ function startSyncProcess(): boolean {
     isSyncing = false;
     if (code === 0) {
       syncProgress = 'Sinkronisasi berhasil diselesaikan!';
+      autoSyncConfig.lastSyncTime = new Date().toISOString();
+      autoSyncConfig.lastStatus = 'success';
+      autoSyncConfig.totalRuns = (autoSyncConfig.totalRuns || 0) + 1;
+      autoSyncConfig.lastError = null;
       reloadDb();
     } else {
       syncProgress = `Gagal sinkronisasi (exit code ${code})`;
+      autoSyncConfig.lastStatus = 'error';
+      autoSyncConfig.lastError = `Exit code ${code}`;
     }
+    saveAutoSyncConfig();
+    scheduleNextAutoSync();
   });
 
   return true;
 }
+
 
 function getDb(): DatabaseSync | null {
   if (!db) {
@@ -247,6 +331,7 @@ app.get('/api/status', (req: Request, res: Response) => {
       syncProgress,
       meta,
       totalRows: countRow?.count || 0,
+      autoSync: autoSyncConfig,
       filterOptions: {
         months,
         statuses,
@@ -260,14 +345,46 @@ app.get('/api/status', (req: Request, res: Response) => {
   }
 });
 
-// 2. Trigger Sync API
+// 2a. Sync & Auto-Sync Status API
+app.get('/api/sync/status', (req: Request, res: Response) => {
+  res.json({
+    isSyncing,
+    syncProgress,
+    autoSync: autoSyncConfig,
+  });
+});
+
+// 2b. Configure Auto-Sync API
+app.post('/api/sync/auto', (req: Request, res: Response) => {
+  try {
+    const { enabled, intervalMinutes } = req.body || {};
+    if (typeof enabled === 'boolean') {
+      autoSyncConfig.enabled = enabled;
+    }
+    if (typeof intervalMinutes === 'number' && intervalMinutes >= 5) {
+      autoSyncConfig.intervalMinutes = intervalMinutes;
+    }
+    scheduleNextAutoSync();
+    res.json({
+      status: 'updated',
+      message: autoSyncConfig.enabled
+        ? `Auto-Sync aktif setiap ${autoSyncConfig.intervalMinutes} menit`
+        : 'Auto-Sync dinonaktifkan',
+      autoSync: autoSyncConfig,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2c. Trigger Manual Sync API
 app.post('/api/sync', (req: Request, res: Response) => {
   if (isSyncing) {
-    return res.json({ status: 'already_running', message: 'Sync is already in progress' });
+    return res.json({ status: 'already_running', message: 'Sync is already in progress', autoSync: autoSyncConfig });
   }
 
-  startSyncProcess();
-  res.json({ status: 'started', message: 'Sync process started in background' });
+  startSyncProcess('manual');
+  res.json({ status: 'started', message: 'Sync process started in background', autoSync: autoSyncConfig });
 });
 
 // Helper to calculate previous month (YYYY-MM)
@@ -637,9 +754,13 @@ app.get('/api/export', (req: Request, res: Response) => {
 
 // Setup Vite middleware in dev or static files in prod
 async function startServer() {
+  loadAutoSyncConfig();
+
   if (!fs.existsSync(DB_PATH)) {
     console.log('Database not found on startup. Triggering initial sync in background...');
-    startSyncProcess();
+    startSyncProcess('init');
+  } else {
+    scheduleNextAutoSync();
   }
 
   if (process.env.NODE_ENV === 'production' && fs.existsSync(path.join(__dirname, 'dist'))) {

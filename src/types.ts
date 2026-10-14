@@ -123,6 +123,16 @@ export interface FilterOptions {
   packers: Array<{ packer: string; count: number }>;
   slocs: Array<{ sloc: string; count: number }>;
 }
+ 
+export interface AutoSyncConfig {
+  enabled: boolean;
+  intervalMinutes: number;
+  lastSyncTime?: string | null;
+  nextSyncTime?: string | null;
+  totalRuns?: number;
+  lastStatus?: 'idle' | 'running' | 'success' | 'error';
+  lastError?: string | null;
+}
 
 export interface SystemStatus {
   isReady: boolean;
@@ -137,4 +147,6 @@ export interface SystemStatus {
     syncDurationSec?: number;
   };
   filterOptions: FilterOptions;
+  autoSync?: AutoSyncConfig;
 }
+

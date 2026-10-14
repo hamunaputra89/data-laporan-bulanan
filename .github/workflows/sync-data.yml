@@ -2,8 +2,8 @@ name: Sync Spreadsheet Data & Deploy
 
 on:
   schedule:
-    # Runs daily at 00:00 UTC
-    - cron: '0 0 * * *'
+    # Runs automatically every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 permissions:
@@ -41,6 +41,13 @@ jobs:
 
       - name: Run data sync from Google Spreadsheet
         run: python3 scripts/sync.py
+
+      - name: Commit updated data back to repository
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/meta.json public/data/
+          git diff --staged --quiet || (git commit -m "chore(auto-sync): update logistics data from Google Sheets [skip ci]" && git push) || true
 
       - name: Build frontend for GitHub Pages
         run: npm run build
